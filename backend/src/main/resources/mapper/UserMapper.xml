@@ -15,9 +15,23 @@
         SELECT * FROM `user` WHERE `phone` = #{phone}
     </select>
 
+    <!-- 列表昵称批量填充专用：只取 id/nickname，避免把 password 哈希读进内存 -->
+    <select id="selectByIds" resultType="User">
+        SELECT `id`, `nickname` FROM `user`
+        WHERE `id` IN
+        <foreach collection="ids" item="uid" open="(" separator="," close=")">
+            #{uid}
+        </foreach>
+    </select>
+
     <update id="updateNickname">
         UPDATE `user` SET `nickname` = #{nickname} WHERE `id` = #{id}
     </update>
+
+    <!-- 行锁：把同一用户的并发申请串行化，保证「每天 3 次」的计数准确 -->
+    <select id="lockById" resultType="long">
+        SELECT `id` FROM `user` WHERE `id` = #{id} FOR UPDATE
+    </select>
 
     <update id="updatePassword">
         UPDATE `user` SET `password` = #{password} WHERE `id` = #{id}

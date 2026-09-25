@@ -3,8 +3,9 @@ spring:
     name: daily_check_in
   datasource:
     url: jdbc:mysql://localhost:3306/daily_check_in?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: root
-    password: "123456"
+    username: ${DB_USERNAME:root}
+    # ⚠️ 默认值仅为本地开发方便；部署时用环境变量 DB_PASSWORD 覆盖，不要把真实口令提交进仓库
+    password: ${DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
 mybatis:
@@ -15,13 +16,14 @@ mybatis:
 
 app:
   jwt:
-    # ⚠️ 生产环境必须更换为随机字符串（不少于 32 字符）
-    secret: "daily-check-in-jwt-secret-please-change-2026"
+    # ⚠️ 生产环境必须用环境变量 JWT_SECRET 覆盖为随机字符串（不少于 32 字符）。
+    # 这个密钥一旦泄露，任何人都能离线伪造任意用户（含 ADMIN）的令牌。
+    secret: ${JWT_SECRET:daily-check-in-jwt-secret-please-change-2026}
     # 令牌有效期（小时），默认 7 天
     expire-hours: 168
   oss:
-    # ⚠️ 占位配置，接入前替换为真实值
-    endpoint: "oss-cn-hangzhou.aliyuncs.com"
-    access-key-id: "your-access-key-id"
-    access-key-secret: "your-access-key-secret"
-    bucket: "your-bucket-name"
+    # ⚠️ 占位配置，接入前替换为真实值（建议同样用环境变量注入）
+    endpoint: ${OSS_ENDPOINT:oss-cn-hangzhou.aliyuncs.com}
+    access-key-id: ${OSS_ACCESS_KEY_ID:your-access-key-id}
+    access-key-secret: ${OSS_ACCESS_KEY_SECRET:your-access-key-secret}
+    bucket: ${OSS_BUCKET:your-bucket-name}

@@ -5,6 +5,7 @@ import com.ben.daily_check_in.mapper.UserMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
@@ -24,6 +25,12 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // CORS 预检请求（OPTIONS）由浏览器自动发出，**不携带 Authorization 头**。
+        // 必须在这里直接放行，否则预检失败，浏览器会拦掉后面真正的请求
+        //（前端所有请求都带 Content-Type: application/json 或 Authorization，必然触发预检）。
+        if (CorsUtils.isPreFlightRequest(request)) {
+            return true;
+        }
         String token = extractToken(request);
         if (token == null) {
             throw com.ben.daily_check_in.common.BizException.unauthorized("未登录");

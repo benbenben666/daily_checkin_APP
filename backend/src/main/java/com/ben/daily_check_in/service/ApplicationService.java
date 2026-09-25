@@ -4,6 +4,7 @@ import com.ben.daily_check_in.common.BizException;
 import com.ben.daily_check_in.dto.application.ApplicationResponse;
 import com.ben.daily_check_in.entity.Company;
 import com.ben.daily_check_in.entity.JoinApplication;
+import com.ben.daily_check_in.mapper.CompanyBlacklistMapper;
 import com.ben.daily_check_in.mapper.CompanyMapper;
 import com.ben.daily_check_in.mapper.JoinApplicationMapper;
 import com.ben.daily_check_in.mapper.UserCompanyMapper;
@@ -22,16 +23,21 @@ import java.util.List;
 @Service
 public class ApplicationService {
 
+    private static final int REASON_MAX = 200;
+
     private final JoinApplicationMapper applicationMapper;
     private final UserCompanyMapper userCompanyMapper;
     private final CompanyMapper companyMapper;
+    private final CompanyBlacklistMapper blacklistMapper;
 
     public ApplicationService(JoinApplicationMapper applicationMapper,
                               UserCompanyMapper userCompanyMapper,
-                              CompanyMapper companyMapper) {
+                              CompanyMapper companyMapper,
+                              CompanyBlacklistMapper blacklistMapper) {
         this.applicationMapper = applicationMapper;
         this.userCompanyMapper = userCompanyMapper;
         this.companyMapper = companyMapper;
+        this.blacklistMapper = blacklistMapper;
     }
 
     /** 待审批列表（仅创始人/管理者/系统管理员） */
@@ -58,6 +64,19 @@ public class ApplicationService {
         JoinApplication app = requirePending(applicationId);
         checkReviewPermission(app.getCompanyId(), reviewerId, app.getApplyRole());
 
+        // 公司已解散 / 申请人已被拉黑时都不得通过：
+        // 否则 upsertOnApprove 会把一个已解散公司的成员行恢复成在职
+        Company company = companyMapper.selectById(app.getCompanyId());
+        if (company == null) {
+            throw BizException.notFound("公司不存在");
+        }
+        if (company.getStatus() == 0) {
+            throw BizException.conflict("公司已解散，无法审批");
+        }
+        if (blacklistMapper.exists(app.getCompanyId(), app.getUserId())) {
+            throw BizException.forbidden("该用户已被拉黑，无法通过申请");
+        }
+
         // 影响 0 行说明已被他人处理
         int rows = applicationMapper.approve(applicationId, reviewerId);
         if (rows == 0) {
@@ -69,6 +88,9 @@ public class ApplicationService {
 
     public void reject(Long applicationId, String rejectReason) {
         Long reviewerId = UserContext.requireUserId();
+        if (rejectReason != null && rejectReason.length() > REASON_MAX) {
+            throw BizException.badRequest("拒绝理由不能超过 " + REASON_MAX + " 个字符");
+        }
         JoinApplication app = requirePending(applicationId);
         checkReviewPermission(app.getCompanyId(), reviewerId, app.getApplyRole());
 

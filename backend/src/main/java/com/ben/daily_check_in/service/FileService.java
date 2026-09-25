@@ -39,7 +39,7 @@ public class FileService {
         Long userId = UserContext.requireUserId();
         AppProperties.Oss oss = props.getOss();
 
-        String type = "SUBMIT".equals(bizType) ? "submit" : "detail";
+        String type = "submit".equalsIgnoreCase(bizType) ? "submit" : "detail";
         String date = DATE_FMT.format(Instant.now());
         // object_key 规则：task/{detail|submit}/{日期}/{用户}/{随机}
         String objectKey = "task/" + type + "/" + date + "/" + userId + "/"

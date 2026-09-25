@@ -41,9 +41,15 @@
             t.`submit_content` = #{submitContent}
         WHERE t.`id` = #{taskId}
           AND t.`status` IN ('PENDING', 'EXPIRED')
-          AND (t.`status` = 'PENDING'
+          <!-- 时限判定直接写进 SQL，不依赖 TaskExpireScheduler 是否按时把 PENDING 改成 EXPIRED -->
+          AND (NOW() &lt;= t.`deadline_at`
                OR (t.`allow_late_submit` = 1 AND NOW() &lt;= t.`late_deadline_at`))
           AND (t.`task_type` = 'GLOBAL' OR ta.`id` IS NOT NULL)
+          <!-- 可见性：看不见的任务不能抢（RESTRICTED 只有白名单/被指派人可抢） -->
+          AND (t.`visibility` = 'PUBLIC'
+               OR ta.`id` IS NOT NULL
+               OR EXISTS (SELECT 1 FROM `task_viewer` tv
+                          WHERE tv.`task_id` = t.`id` AND tv.`user_id` = #{userId}))
     </update>
 
     <!-- 取消任务：仅 PENDING / EXPIRED 可取消 -->
@@ -76,6 +82,9 @@
           )
           AND (
                 (t.`task_type` = 'GLOBAL' AND t.`status` = 'PENDING' AND t.`deadline_at` &gt; NOW())
+             <!-- 超时但仍在补交窗口内的全局任务也要留在列表里，否则员工找不到入口补交 -->
+             OR (t.`task_type` = 'GLOBAL' AND t.`status` = 'EXPIRED'
+                 AND t.`allow_late_submit` = 1 AND NOW() &lt;= t.`late_deadline_at`)
              OR EXISTS (SELECT 1 FROM `task_assignee` ta2 WHERE ta2.`task_id` = t.`id` AND ta2.`user_id` = #{userId})
           )
         ORDER BY t.`created_at` DESC
@@ -97,12 +106,13 @@
         ORDER BY t.`created_at` DESC
     </select>
 
-    <!-- 单条任务可见性校验 -->
+    <!-- 单条任务可见性校验（管理者/创始人/发布者的放行在 Service 层判定） -->
     <select id="canView" resultType="boolean">
         SELECT EXISTS (
             SELECT 1 FROM `task` t
             WHERE t.`id` = #{taskId}
               AND (t.`visibility` = 'PUBLIC'
+                OR t.`publisher_id` = #{userId}
                 OR EXISTS (SELECT 1 FROM `task_viewer`   tv WHERE tv.`task_id` = t.`id` AND tv.`user_id` = #{userId})
                 OR EXISTS (SELECT 1 FROM `task_assignee` ta WHERE ta.`task_id` = t.`id` AND ta.`user_id` = #{userId}))
         )

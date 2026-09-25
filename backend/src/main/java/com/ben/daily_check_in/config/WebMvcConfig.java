@@ -28,10 +28,13 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        // 只放行本地开发地址（H5 开发服务器），不再使用 "*"：
+        // "*" + allowCredentials(true) 会让任意站点带凭证调用全部 /api
         registry.addMapping("/**")
-                .allowedOriginPatterns("*")
+                .allowedOriginPatterns("http://localhost:[*]", "http://127.0.0.1:[*]")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
-                .allowCredentials(true);
+                .allowCredentials(true)
+                .maxAge(3600);
     }
 }

@@ -47,9 +47,26 @@
         WHERE `company_id` = #{companyId} AND `status` = 1
     </select>
 
+    <!-- 从给定 ID 中筛出该公司当前在职的那部分 -->
+    <select id="selectActiveUserIds" resultType="long">
+        SELECT `user_id` FROM `user_company`
+        WHERE `company_id` = #{companyId} AND `status` = 1
+          AND `user_id` IN
+        <foreach collection="userIds" item="uid" open="(" separator="," close=")">
+            #{uid}
+        </foreach>
+    </select>
+
     <update id="removeMember">
         UPDATE `user_company`
         SET `status` = 0, `leave_type` = 2, `left_at` = NOW()
+        WHERE `user_id` = #{userId} AND `company_id` = #{companyId} AND `status` = 1
+    </update>
+
+    <!-- M-13 主动退出，离职方式 1（与 2-被移除 / 3-被拉黑 可区分） -->
+    <update id="leave">
+        UPDATE `user_company`
+        SET `status` = 0, `leave_type` = 1, `left_at` = NOW()
         WHERE `user_id` = #{userId} AND `company_id` = #{companyId} AND `status` = 1
     </update>
 

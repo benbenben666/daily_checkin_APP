@@ -8,6 +8,7 @@ import com.ben.daily_check_in.mapper.CompanyBlacklistMapper;
 import com.ben.daily_check_in.mapper.CompanyMapper;
 import com.ben.daily_check_in.mapper.JoinApplicationMapper;
 import com.ben.daily_check_in.mapper.UserCompanyMapper;
+import com.ben.daily_check_in.mapper.UserMapper;
 import com.ben.daily_check_in.security.LoginUser;
 import com.ben.daily_check_in.security.UserContext;
 import org.springframework.stereotype.Service;
@@ -18,42 +19,52 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 公司：创建 / 我的公司 / 详情 / 申请加入 / 成员管理 / 拉黑 / 解散。
+ * 公司：创建 / 我的公司 / 详情 / 申请加入 / 成员管理 / 拉黑 / 主动退出 / 解散。
  */
 @Service
 public class CompanyService {
 
     private static final String INVITE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final int NAME_MAX = 100;
+    private static final int REASON_MAX = 200;
 
     private final CompanyMapper companyMapper;
     private final UserCompanyMapper userCompanyMapper;
     private final JoinApplicationMapper applicationMapper;
     private final CompanyBlacklistMapper blacklistMapper;
+    private final UserMapper userMapper;
 
     public CompanyService(CompanyMapper companyMapper, UserCompanyMapper userCompanyMapper,
-                          JoinApplicationMapper applicationMapper, CompanyBlacklistMapper blacklistMapper) {
+                          JoinApplicationMapper applicationMapper, CompanyBlacklistMapper blacklistMapper,
+                          UserMapper userMapper) {
         this.companyMapper = companyMapper;
         this.userCompanyMapper = userCompanyMapper;
         this.applicationMapper = applicationMapper;
         this.blacklistMapper = blacklistMapper;
+        this.userMapper = userMapper;
     }
 
     /** C-1 任何用户可创建公司，创建者自动成为创始人（同一事务） */
     @Transactional
     public Long createCompany(CreateCompanyRequest req) {
         Long userId = UserContext.requireUserId();
-        if (req.getName() == null || req.getName().isBlank()) {
+        if (req == null || req.getName() == null || req.getName().isBlank()) {
             throw BizException.badRequest("公司名称不能为空");
         }
-        // 生成唯一邀请码（撞唯一键则重试）
+        if (req.getName().trim().length() > NAME_MAX) {
+            throw BizException.badRequest("公司名称不能超过 " + NAME_MAX + " 个字符");
+        }
+        // 生成唯一邀请码（先查一次给出友好提示；极罕见的并发撞唯一键由全局异常处理兜底）
         String inviteCode;
         do {
             inviteCode = generateInviteCode();
         } while (companyMapper.selectByInviteCode(inviteCode) != null);
 
-        companyMapper.insert(req.getName().trim(), inviteCode);
-        Company company = companyMapper.selectByInviteCode(inviteCode);
+        Company company = new Company();
+        company.setName(req.getName().trim());
+        company.setInviteCode(inviteCode);
+        companyMapper.insert(company);
         // uk_one_founder 保证每家公司不会出现第二个创始人
         userCompanyMapper.insert(userId, company.getId(), "FOUNDER");
         return company.getId();
@@ -79,9 +90,11 @@ public class CompanyService {
         return result;
     }
 
+    /** 公司详情：仅本公司成员（或系统管理员）可查看，防止凭自增 ID 枚举全平台公司 */
     public CompanyDetailResponse detail(Long companyId) {
         Long userId = UserContext.requireUserId();
         Company company = requireCompany(companyId);
+        requireMember(companyId);
         CompanyDetailResponse resp = new CompanyDetailResponse();
         resp.setId(company.getId());
         resp.setName(company.getName());
@@ -98,9 +111,10 @@ public class CompanyService {
     }
 
     /** M-1~M-6 申请加入公司 */
+    @Transactional
     public Long join(JoinCompanyRequest req) {
         Long userId = UserContext.requireUserId();
-        if (req.getInviteCode() == null || req.getInviteCode().isBlank()) {
+        if (req == null || req.getInviteCode() == null || req.getInviteCode().isBlank()) {
             throw BizException.badRequest("邀请码不能为空");
         }
         if (!"MANAGER".equals(req.getApplyRole()) && !"EMPLOYEE".equals(req.getApplyRole())) {
@@ -116,11 +130,14 @@ public class CompanyService {
         if (userCompanyMapper.selectActive(userId, company.getId()) != null) {
             throw BizException.conflict("你已是该公司成员");
         }
+        // 把自己这行锁住，让同一用户的并发申请串行执行：
+        // 否则两个请求可能同时读到 count=2 然后都插入，「每天最多 3 次」会被绕过
+        userMapper.lockById(userId);
         // M-3 / M-5 每日最多 3 次，全部状态计入
         if (applicationMapper.countToday(userId, company.getId()) >= 3) {
             throw BizException.conflict("今日申请次数已达上限（3 次）");
         }
-        // M-4 已有待审批申请时不能再申请
+        // M-4 已有待审批申请时不能再申请（uk_one_pending 唯一索引是最后一道防线）
         if (applicationMapper.hasPending(userId, company.getId())) {
             throw BizException.conflict("已有待审批的申请，请勿重复提交");
         }
@@ -155,17 +172,40 @@ public class CompanyService {
         userCompanyMapper.removeMember(targetUserId, companyId);
     }
 
+    /** M-13 主动退出公司（离职方式 1）。创始人不能退出，必须先解散公司 */
+    @Transactional
+    public void leave(Long companyId) {
+        Long userId = UserContext.requireUserId();
+        requireCompany(companyId);
+        String myRole = userCompanyMapper.selectActiveRole(userId, companyId);
+        if (myRole == null) {
+            throw BizException.forbidden("你不是该公司成员");
+        }
+        if ("FOUNDER".equals(myRole)) {
+            throw BizException.conflict("创始人不能退出公司，请先解散公司");
+        }
+        if (userCompanyMapper.leave(userId, companyId) == 0) {
+            throw BizException.conflict("退出失败，请刷新后重试");
+        }
+    }
+
     /** M-9~M-11 拉黑（在职/非在职合并为一条代码路径，见开发文档 7.8） */
     @Transactional
     public void blacklist(Long companyId, BlacklistRequest req) {
         Long operatorId = UserContext.requireUserId();
         requireCompany(companyId);
         requireManagerOrFounder(companyId);
-        if (req.getUserId() == null) {
+        if (req == null || req.getUserId() == null) {
             throw BizException.badRequest("缺少被拉黑用户");
         }
         if (operatorId.equals(req.getUserId())) {
             throw BizException.badRequest("不能拉黑自己");
+        }
+        if (userMapper.selectById(req.getUserId()) == null) {
+            throw BizException.notFound("被拉黑的用户不存在");
+        }
+        if (req.getReason() != null && req.getReason().length() > REASON_MAX) {
+            throw BizException.badRequest("拉黑原因不能超过 " + REASON_MAX + " 个字符");
         }
         String targetRole = userCompanyMapper.selectActiveRole(req.getUserId(), companyId);
         if ("FOUNDER".equals(targetRole)) {

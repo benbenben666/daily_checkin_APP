@@ -20,6 +20,8 @@ import java.util.List;
 @Service
 public class AdminService {
 
+    private static final int NICKNAME_MAX = 50;
+
     private final UserMapper userMapper;
     private final CompanyMapper companyMapper;
     private final UserCompanyMapper userCompanyMapper;
@@ -51,8 +53,18 @@ public class AdminService {
     public void updateUser(Long userId, AdminUpdateUserRequest req) {
         requireAdmin();
         requireUser(userId);
+        if (req == null) {
+            throw BizException.badRequest("请求内容不能为空");
+        }
         if (req.getNickname() != null) {
-            userMapper.updateNickname(userId, req.getNickname());
+            String nickname = req.getNickname().trim();
+            if (nickname.isEmpty()) {
+                throw BizException.badRequest("昵称不能为空");
+            }
+            if (nickname.length() > NICKNAME_MAX) {
+                throw BizException.badRequest("昵称不能超过 " + NICKNAME_MAX + " 个字符");
+            }
+            userMapper.updateNickname(userId, nickname);
         }
         if (req.getStatus() != null) {
             if (req.getStatus() != 0 && req.getStatus() != 1) {
