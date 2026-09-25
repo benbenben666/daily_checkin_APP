@@ -1,4 +1,13 @@
-### 前端 ###
+### 后端构建产物 ###
+# 若 IDEA 以「仓库根目录」而非 backend/ 为项目打开，会在根目录生成 target/
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+### uni-app x 编译产物（HBuilderX 生成）###
+unpackage/
+.hbuilderx/
+
+### 前端（Web 构建工具链，将来若引入才需要）###
 frontend/node_modules/
 frontend/dist/
 frontend/dist-ssr/
