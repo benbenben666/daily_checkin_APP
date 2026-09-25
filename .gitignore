@@ -1,7 +1,6 @@
 ### 后端构建产物 ###
 # 若 IDEA 以「仓库根目录」而非 backend/ 为项目打开，会在根目录生成 target/
 target/
-!.mvn/wrapper/maven-wrapper.jar
 
 ### 前端（经典 uni-app + Vite）###
 node_modules/

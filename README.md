@@ -50,14 +50,21 @@ mysql -u root -p < backend/src/main/resources/db/schema.sql
 
 ### 2. 后端
 
-用 IDEA 打开 **`backend`** 目录（不是仓库根目录），然后：
+用 IDEA 打开**仓库根目录**即可（根 `.idea/misc.xml` 已正确指向 `backend/pom.xml`，JDK 21、本地仓库 `D:\repo`、`D:\conf\settings.xml` 都已识别），然后：
 
 ```powershell
 cd backend
 .\mvnw spring-boot:run
 ```
 
-服务启动在 `http://localhost:8080`。数据库账号密码在 `backend/src/main/resources/application.yaml`。
+服务启动在 `http://localhost:8080`。
+
+数据库口令与 JWT 密钥已改成**环境变量写法**，默认值可直接跑（`DB_PASSWORD` 默认 `123456`）。部署时用环境变量覆盖，**不要把真实口令提交进仓库**：
+
+```powershell
+$env:DB_PASSWORD = "真实口令"
+$env:JWT_SECRET  = "至少32位的随机字符串"
+```
 
 ### 3. 前端
 
@@ -81,8 +88,9 @@ UPDATE `user` SET `system_role` = 'ADMIN' WHERE `phone` = '你的手机号';
 
 ```powershell
 git pull      # 开工前
-git add . && git commit -m "..." && git push    # 收工后
+git add -A && git commit -m "..." && git push    # 收工后
 ```
 
 - 远程用 SSH，两台电脑各有一把密钥，互不复制
-- `.idea/` 和 `target/` 都是本地的，不进 git；换电脑后需要重新用 IDEA 打开 `backend`
+- `.idea/`、`target/`、`node_modules/` 都是本地的，不进 git
+- ⚠️ **用 IDEA 的提交对话框时，一定要展开并勾选 `Unversioned Files`（未版本化文件）** —— 否则新建的文件不会进提交。本项目就踩过一次：`entity/`、`mapper/`、`controller/` 三个目录共 24 个文件漏提交，另一台电脑拉下来直接编译不过。提交前用 `git status` 复核一遍最稳。
