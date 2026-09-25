@@ -26,6 +26,7 @@ import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { companyApi } from '../../api/index.js'
 import { getToken } from '../../api/request.js'
+import { formatTime } from '../../utils/format.js'
 
 const companies = ref([])
 const loading = ref(true)
@@ -53,10 +54,6 @@ function roleText(role) {
 
 function roleTagClass(role) {
 	return role === 'FOUNDER' ? 'tag-orange' : role === 'MANAGER' ? 'tag-blue' : 'tag-green'
-}
-
-function formatTime(t) {
-	return t ? t.replace('T', ' ').substring(0, 16) : ''
 }
 
 function enterCompany(c) {

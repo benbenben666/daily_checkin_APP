@@ -36,13 +36,22 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { companyApi, applicationApi } from '../../api/index.js'
+import { getToken } from '../../api/request.js'
+import { formatTime } from '../../utils/format.js'
 
 const inviteCode = ref('')
 const applyRole = ref('EMPLOYEE')
 const loading = ref(false)
+const cancelingId = ref(0)
 const myApps = ref([])
 
-onShow(loadApps)
+onShow(async () => {
+	if (!getToken()) {
+		uni.reLaunch({ url: '/pages/login/login' })
+		return
+	}
+	await loadApps()
+})
 
 async function loadApps() {
 	myApps.value = await applicationApi.mine()
@@ -66,9 +75,17 @@ async function submit() {
 }
 
 async function cancelApp(a) {
-	await applicationApi.cancel(a.id)
-	uni.showToast({ title: '已撤回', icon: 'none' })
-	await loadApps()
+	if (cancelingId.value) return
+	cancelingId.value = a.id
+	try {
+		await applicationApi.cancel(a.id)
+		uni.showToast({ title: '已撤回', icon: 'none' })
+		await loadApps()
+	} catch (e) {
+		// 错误提示已在 request 层统一处理
+	} finally {
+		cancelingId.value = 0
+	}
 }
 
 function statusText(s) {
@@ -77,10 +94,6 @@ function statusText(s) {
 
 function statusTagClass(s) {
 	return s === 'PENDING' ? 'tag-orange' : s === 'APPROVED' ? 'tag-green' : s === 'REJECTED' ? 'tag-red' : 'tag-gray'
-}
-
-function formatTime(t) {
-	return t ? t.replace('T', ' ').substring(0, 16) : ''
 }
 </script>
 

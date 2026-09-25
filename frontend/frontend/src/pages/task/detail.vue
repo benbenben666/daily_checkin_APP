@@ -48,7 +48,7 @@
 			<button v-if="canComplete" class="btn-primary" @click="showComplete = true">
 				{{ task.status === 'EXPIRED' ? '超时补交' : '完成任务' }}
 			</button>
-			<button v-if="canCancel" class="btn-danger" @click="cancelTask">取消任务</button>
+			<button v-if="canCancel" class="btn-danger" :loading="canceling" @click="cancelTask">取消任务</button>
 		</view>
 
 		<!-- 完成提交弹窗 -->
@@ -68,26 +68,50 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { taskApi } from '../../api/index.js'
+import { companyApi, taskApi } from '../../api/index.js'
+import { getToken } from '../../api/request.js'
+import { formatTime } from '../../utils/format.js'
 
 const taskId = ref(0)
 const task = ref(null)
 const showComplete = ref(false)
 const submitContent = ref('')
 const submitting = ref(false)
+const canceling = ref(false)
 const myUserId = ref(0)
+const companyRole = ref('')
+const systemRole = ref('')
+
+// 是否被指派（ASSIGNED 任务只有被指派人能完成，否则后端必然拒绝）
+const isAssignee = computed(() => {
+	if (!task.value || !task.value.assignees) return false
+	return task.value.assignees.some(a => Number(a.userId) === Number(myUserId.value))
+})
 
 const canComplete = computed(() => {
 	if (!task.value) return false
+	if (task.value.taskType === 'ASSIGNED' && !isAssignee.value) return false
 	if (task.value.status === 'PENDING') return true
-	// 已超时：允许补交且未超补交窗口时仍可提交（后端会二次校验）
-	return task.value.status === 'EXPIRED' && task.value.allowLateSubmit === 1
+	// 已超时：需允许补交且当前时间仍在补交截止时间之前
+	return task.value.status === 'EXPIRED'
+		&& task.value.allowLateSubmit === 1
+		&& isWithinLateDeadline(task.value.lateDeadlineAt)
 })
 
 const canCancel = computed(() => {
 	if (!task.value) return false
-	return task.value.status === 'PENDING' || task.value.status === 'EXPIRED'
+	const s = task.value.status
+	if (s !== 'PENDING' && s !== 'EXPIRED') return false
+	// 与后端一致：该公司创始人/管理者，或系统管理员
+	return systemRole.value === 'ADMIN' || companyRole.value === 'FOUNDER' || companyRole.value === 'MANAGER'
 })
+
+function isWithinLateDeadline(t) {
+	if (!t) return false
+	const deadline = new Date(String(t).replace(' ', 'T'))
+	if (isNaN(deadline.getTime())) return false
+	return Date.now() <= deadline.getTime()
+}
 
 const statusText = computed(() => {
 	if (!task.value) return ''
@@ -102,16 +126,44 @@ const statusTag = computed(() => {
 })
 
 onLoad((options) => {
-	taskId.value = Number(options.id)
+	const id = Number(options && options.id)
+	if (!Number.isFinite(id) || id <= 0) {
+		uni.showToast({ title: '任务参数有误', icon: 'none' })
+		setTimeout(() => uni.navigateBack(), 800)
+		return
+	}
+	taskId.value = id
 	try {
-		myUserId.value = JSON.parse(uni.getStorageSync('user_info') || '{}').userId || 0
+		const me = JSON.parse(uni.getStorageSync('user_info') || '{}')
+		myUserId.value = me.userId || 0
+		systemRole.value = me.systemRole || 'USER'
 	} catch (e) {}
 })
 
-onShow(load)
+onShow(async () => {
+	if (!getToken()) {
+		uni.reLaunch({ url: '/pages/login/login' })
+		return
+	}
+	if (!taskId.value) return
+	await load()
+})
 
 async function load() {
 	task.value = await taskApi.detail(taskId.value)
+	if (task.value && task.value.companyId) {
+		await loadCompanyRole()
+	}
+}
+
+// 取消权限以接口返回的 myRole 为准（不能用路由参数）
+async function loadCompanyRole() {
+	try {
+		const detail = await companyApi.detail(task.value.companyId)
+		companyRole.value = (detail && detail.myRole) || ''
+	} catch (e) {
+		companyRole.value = ''
+	}
 }
 
 async function doComplete() {
@@ -128,23 +180,26 @@ async function doComplete() {
 }
 
 function cancelTask() {
+	if (canceling.value) return
 	uni.showModal({
 		title: '取消任务',
 		content: '确定取消该任务吗？',
 		editable: true,
 		placeholderText: '取消原因（可选）',
 		success: async (res) => {
-			if (res.confirm) {
+			if (!res.confirm || canceling.value) return
+			canceling.value = true
+			try {
 				await taskApi.cancel(taskId.value, res.content || '')
 				uni.showToast({ title: '已取消', icon: 'none' })
 				await load()
+			} catch (e) {
+				// 错误提示已在 request 层统一处理
+			} finally {
+				canceling.value = false
 			}
 		}
 	})
-}
-
-function formatTime(t) {
-	return t ? t.replace('T', ' ').substring(0, 16) : ''
 }
 </script>
 

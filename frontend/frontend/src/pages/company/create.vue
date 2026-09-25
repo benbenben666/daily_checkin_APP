@@ -10,10 +10,18 @@
 
 <script setup>
 import { ref } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { companyApi } from '../../api/index.js'
+import { getToken } from '../../api/request.js'
 
 const name = ref('')
 const loading = ref(false)
+
+onShow(() => {
+	if (!getToken()) {
+		uni.reLaunch({ url: '/pages/login/login' })
+	}
+})
 
 async function submit() {
 	if (!name.value.trim()) {

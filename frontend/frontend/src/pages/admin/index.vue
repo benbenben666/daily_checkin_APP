@@ -3,7 +3,7 @@
 		<view class="row tabs">
 			<view class="tab flex1" :class="{ active: tab === 'users' }" @click="switchTab('users')">用户管理</view>
 			<view class="tab flex1" :class="{ active: tab === 'companies' }" @click="switchTab('companies')">公司管理</view>
-			<view class="tab flex1" :class="{ active: tab === 'profile' }" @click="goProfile">我的</view>
+			<view class="tab flex1" @click="goProfile">我的</view>
 		</view>
 
 		<view class="card search-row">
@@ -65,6 +65,7 @@ const keyword = ref('')
 const users = ref([])
 const companies = ref([])
 const myUserId = ref(0)
+const submitting = ref(false)
 
 onShow(async () => {
 	if (!getToken()) {
@@ -85,27 +86,48 @@ async function load() {
 	}
 }
 
-function switchTab(t) {
+async function switchTab(t) {
 	tab.value = t
 	keyword.value = ''
-	load()
+	try {
+		await load()
+	} catch (e) {
+		// 错误提示已在 request 层统一处理
+	}
 }
 
 function goProfile() {
-	uni.navigateTo({ url: '/pages/profile/index' })
+	// 「我的」不在当前页面栈内，用 reLaunch 避免重复页面实例
+	uni.reLaunch({ url: '/pages/profile/index' })
 }
 
 async function toggleAdmin(u) {
-	const target = u.systemRole === 'ADMIN' ? 'USER' : 'ADMIN'
-	await adminApi.updateRole(u.id, target)
-	uni.showToast({ title: '已更新', icon: 'none' })
-	await load()
+	if (submitting.value) return
+	submitting.value = true
+	try {
+		const target = u.systemRole === 'ADMIN' ? 'USER' : 'ADMIN'
+		await adminApi.updateRole(u.id, target)
+		uni.showToast({ title: '已更新', icon: 'none' })
+		await load()
+	} catch (e) {
+		// 错误提示已在 request 层统一处理
+	} finally {
+		submitting.value = false
+	}
 }
 
 async function toggleStatus(u) {
-	await adminApi.updateUser(u.id, { status: u.status === 1 ? 0 : 1 })
-	uni.showToast({ title: '已更新', icon: 'none' })
-	await load()
+	if (submitting.value) return
+	submitting.value = true
+	try {
+		await adminApi.updateUser(u.id, { status: u.status === 1 ? 0 : 1 })
+		uni.showToast({ title: '已更新', icon: 'none' })
+		await load()
+	} catch (e) {
+		// 错误提示已在 request 层统一处理
+	} finally {
+		submitting.value = false
+	}
 }
 
 function deleteUser(u) {
@@ -113,10 +135,16 @@ function deleteUser(u) {
 		title: '删除用户',
 		content: `确定删除 ${u.nickname || u.phone} 吗？（软删除，历史数据保留）`,
 		success: async (res) => {
-			if (res.confirm) {
+			if (!res.confirm || submitting.value) return
+			submitting.value = true
+			try {
 				await adminApi.deleteUser(u.id)
 				uni.showToast({ title: '已删除', icon: 'none' })
 				await load()
+			} catch (e) {
+				// 错误提示已在 request 层统一处理
+			} finally {
+				submitting.value = false
 			}
 		}
 	})
@@ -127,10 +155,16 @@ function dissolveCompany(c) {
 		title: '解散公司',
 		content: `确定解散「${c.name}」吗？`,
 		success: async (res) => {
-			if (res.confirm) {
+			if (!res.confirm || submitting.value) return
+			submitting.value = true
+			try {
 				await adminApi.dissolveCompany(c.id)
 				uni.showToast({ title: '已解散', icon: 'none' })
 				await load()
+			} catch (e) {
+				// 错误提示已在 request 层统一处理
+			} finally {
+				submitting.value = false
 			}
 		}
 	})

@@ -4,7 +4,7 @@
 		<view class="card header">
 			<view class="row">
 				<text class="company-name flex1">{{ companyName }}</text>
-				<text class="tag" :class="roleTagClass(myRole)">{{ roleText(myRole) }}</text>
+				<text v-if="myRole" class="tag" :class="roleTagClass(myRole)">{{ roleText(myRole) }}</text>
 			</view>
 			<view v-if="detail && detail.inviteCode" class="row invite-row">
 				<text class="muted">邀请码：{{ detail.inviteCode }}</text>
@@ -23,7 +23,7 @@
 
 		<!-- 任务列表 -->
 		<view v-if="tab === 'task'">
-			<view v-if="!isManager" class="row view-switch">
+			<view v-if="myRole && !isManager" class="row view-switch">
 				<view class="tag" :class="taskView === 'grab' ? 'tag-blue' : 'tag-gray'" @click="changeView('grab')">待办</view>
 				<view class="tag" :class="taskView === 'history' ? 'tag-blue' : 'tag-gray'" @click="changeView('history')">历史</view>
 			</view>
@@ -55,13 +55,13 @@
 				<view class="row">
 					<text class="muted flex1">{{ m.phone }} · 加入于 {{ formatTime(m.joinedAt) }}</text>
 					<view v-if="canManageMember(m)" class="row">
-						<text class="link" @click="removeMember(m)">移除</text>
-						<text class="link danger" @click="blacklistMember(m)">拉黑</text>
+						<text class="link" :class="{ busy: memberActingId === m.userId }" @click="removeMember(m)">移除</text>
+						<text class="link danger" :class="{ busy: memberActingId === m.userId }" @click="blacklistMember(m)">拉黑</text>
 					</view>
 				</view>
 			</view>
 			<view v-if="isFounder" class="card">
-				<button class="btn-danger" @click="dissolveCompany">解散公司</button>
+				<button class="btn-danger" :loading="dissolving" @click="dissolveCompany">解散公司</button>
 			</view>
 		</view>
 
@@ -79,11 +79,16 @@
 				</view>
 				<text class="muted">{{ a.userPhone }} · {{ formatTime(a.createdAt) }}</text>
 				<view v-if="a.status === 'PENDING'" class="row approve-btns">
-					<button class="btn-primary mini" @click="approve(a)">通过</button>
-					<button class="btn-danger mini" @click="reject(a)">拒绝</button>
+					<button class="btn-primary mini" :loading="appActingId === a.id" @click="approve(a)">通过</button>
+					<button class="btn-danger mini" :loading="appActingId === a.id" @click="reject(a)">拒绝</button>
 				</view>
 				<text v-if="a.status === 'REJECTED' && a.rejectReason" class="muted">拒绝理由：{{ a.rejectReason }}</text>
 			</view>
+		</view>
+
+		<!-- 退出公司（非创始人可见） -->
+		<view v-if="canLeave" class="card leave-card">
+			<button class="btn-danger" :loading="leaving" @click="leaveCompany">退出公司</button>
 		</view>
 	</view>
 </template>
@@ -92,6 +97,8 @@
 import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { companyApi, taskApi, applicationApi } from '../../api/index.js'
+import { getToken } from '../../api/request.js'
+import { formatTime } from '../../utils/format.js'
 
 const companyId = ref(0)
 const companyName = ref('')
@@ -104,25 +111,39 @@ const members = ref([])
 const applications = ref([])
 const approveView = ref('pending')
 const myUserId = ref(0)
+const leaving = ref(false)
+const dissolving = ref(false)
+const memberActingId = ref(0)
+const appActingId = ref(0)
 
 const isManager = computed(() => myRole.value === 'FOUNDER' || myRole.value === 'MANAGER')
 const isFounder = computed(() => myRole.value === 'FOUNDER')
+// 创始人不能退出公司（需先解散），其余在职角色可主动离职
+const canLeave = computed(() => !!myRole.value && myRole.value !== 'FOUNDER')
 const pendingCount = computed(() => applications.value.filter(a => a.status === 'PENDING').length)
 
 onLoad((options) => {
 	companyId.value = Number(options.id)
-	companyName.value = decodeURIComponent(options.name || '')
-	myRole.value = options.role || ''
+	// uni-app H5 路由已解码过一次，这里不能再 decodeURIComponent（含裸 % 的公司名会抛 URIError）
+	companyName.value = options.name || ''
+	// 角色不取路由参数，统一等 companyApi.detail 返回的 myRole，避免按参数短暂渲染出错误权限
 })
 
 onShow(async () => {
+	if (!getToken()) {
+		uni.reLaunch({ url: '/pages/login/login' })
+		return
+	}
 	try {
 		const me = JSON.parse(uni.getStorageSync('user_info') || '{}')
 		myUserId.value = me.userId || 0
 	} catch (e) {}
-	await Promise.all([loadDetail(), loadTasks()])
+	// 先拿到权威角色，再按角色取任务列表（员工视图与管理者全量列表不同）
+	await loadDetail()
+	await loadTasks()
+	// 角标依赖待审批列表，进入页面时就要加载（不能只在切到审批 Tab 时才加载）
+	if (isManager.value) await loadApplications()
 	if (tab.value === 'member') await loadMembers()
-	if (tab.value === 'approve') await loadApplications()
 })
 
 async function loadDetail() {
@@ -144,10 +165,14 @@ async function loadApplications() {
 		: await applicationApi.history(companyId.value)
 }
 
-function switchTab(t) {
+async function switchTab(t) {
 	tab.value = t
-	if (t === 'member') loadMembers()
-	if (t === 'approve') loadApplications()
+	try {
+		if (t === 'member') await loadMembers()
+		if (t === 'approve') await loadApplications()
+	} catch (e) {
+		// 错误提示已在 request 层统一处理
+	}
 }
 
 async function changeView(v) {
@@ -182,69 +207,138 @@ function canManageMember(m) {
 }
 
 async function removeMember(m) {
+	if (memberActingId.value) return
 	uni.showModal({
 		title: '移除成员',
 		content: `确定移除 ${m.nickname || m.phone} 吗？`,
 		success: async (res) => {
-			if (res.confirm) {
+			if (!res.confirm || memberActingId.value) return
+			memberActingId.value = m.userId
+			try {
 				await companyApi.removeMember(companyId.value, m.userId)
 				uni.showToast({ title: '已移除', icon: 'none' })
 				await loadMembers()
+			} catch (e) {
+				// 错误提示已在 request 层统一处理
+			} finally {
+				memberActingId.value = 0
 			}
 		}
 	})
 }
 
 function blacklistMember(m) {
-	// #ifdef H5
-	const reason = window.prompt('拉黑原因（可留空）', '')
-	doBlacklist(m, reason)
-	// #endif
-	// #ifndef H5
-	doBlacklist(m, '')
-	// #endif
+	if (memberActingId.value) return
+	uni.showModal({
+		title: '拉黑成员',
+		content: `确定拉黑 ${m.nickname || m.phone} 吗？拉黑后该成员将被移出公司`,
+		editable: true,
+		placeholderText: '拉黑原因（可选）',
+		success: async (res) => {
+			if (res.confirm) {
+				await doBlacklist(m, res.content || '')
+			}
+		}
+	})
 }
 
 async function doBlacklist(m, reason) {
-	await companyApi.blacklist(companyId.value, { userId: m.userId, reason })
-	uni.showToast({ title: '已拉黑', icon: 'none' })
-	await loadMembers()
+	if (memberActingId.value) return
+	memberActingId.value = m.userId
+	try {
+		await companyApi.blacklist(companyId.value, { userId: m.userId, reason })
+		uni.showToast({ title: '已拉黑', icon: 'none' })
+		await loadMembers()
+	} catch (e) {
+		// 错误提示已在 request 层统一处理
+	} finally {
+		memberActingId.value = 0
+	}
 }
 
 function dissolveCompany() {
+	if (dissolving.value) return
 	uni.showModal({
 		title: '解散公司',
 		content: '解散后不可恢复，确定解散吗？',
 		success: async (res) => {
-			if (res.confirm) {
+			if (!res.confirm || dissolving.value) return
+			dissolving.value = true
+			try {
 				await companyApi.dissolve(companyId.value)
 				uni.showToast({ title: '已解散', icon: 'none' })
 				setTimeout(() => uni.navigateBack(), 800)
+			} catch (e) {
+				// 错误提示已在 request 层统一处理
+			} finally {
+				dissolving.value = false
 			}
 		}
 	})
 }
 
 async function approve(a) {
-	await applicationApi.approve(a.id)
-	uni.showToast({ title: '已通过', icon: 'none' })
-	await loadApplications()
+	if (appActingId.value) return
+	appActingId.value = a.id
+	try {
+		await applicationApi.approve(a.id)
+		uni.showToast({ title: '已通过', icon: 'none' })
+		await loadApplications()
+	} catch (e) {
+		// 错误提示已在 request 层统一处理
+	} finally {
+		appActingId.value = 0
+	}
 }
 
 function reject(a) {
-	// #ifdef H5
-	const reason = window.prompt('拒绝理由（可留空）', '')
-	if (reason !== null) doReject(a, reason)
-	// #endif
-	// #ifndef H5
-	doReject(a, '')
-	// #endif
+	if (appActingId.value) return
+	uni.showModal({
+		title: '拒绝申请',
+		content: `确定拒绝 ${a.userNickname || a.userPhone} 的申请吗？`,
+		editable: true,
+		placeholderText: '拒绝理由（可选）',
+		success: async (res) => {
+			if (res.confirm) {
+				await doReject(a, res.content || '')
+			}
+		}
+	})
 }
 
 async function doReject(a, reason) {
-	await applicationApi.reject(a.id, reason)
-	uni.showToast({ title: '已拒绝', icon: 'none' })
-	await loadApplications()
+	if (appActingId.value) return
+	appActingId.value = a.id
+	try {
+		await applicationApi.reject(a.id, reason)
+		uni.showToast({ title: '已拒绝', icon: 'none' })
+		await loadApplications()
+	} catch (e) {
+		// 错误提示已在 request 层统一处理
+	} finally {
+		appActingId.value = 0
+	}
+}
+
+function leaveCompany() {
+	if (leaving.value) return
+	uni.showModal({
+		title: '退出公司',
+		content: `确定退出「${companyName.value}」吗？退出后需重新申请加入`,
+		success: async (res) => {
+			if (!res.confirm || leaving.value) return
+			leaving.value = true
+			try {
+				await companyApi.leave(companyId.value)
+				uni.showToast({ title: '已退出公司', icon: 'none' })
+				setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 800)
+			} catch (e) {
+				// 错误提示已在 request 层统一处理
+			} finally {
+				leaving.value = false
+			}
+		}
+	})
 }
 
 function roleText(role) {
@@ -269,10 +363,6 @@ function appStatusText(s) {
 
 function appStatusTag(s) {
 	return s === 'PENDING' ? 'tag-orange' : s === 'APPROVED' ? 'tag-green' : s === 'REJECTED' ? 'tag-red' : 'tag-gray'
-}
-
-function formatTime(t) {
-	return t ? t.replace('T', ' ').substring(0, 16) : ''
 }
 </script>
 
@@ -373,6 +463,10 @@ function formatTime(t) {
 	color: #fa3534;
 }
 
+.link.busy {
+	color: #c0c4cc;
+}
+
 .app-item {
 	display: flex;
 	flex-direction: column;
@@ -388,5 +482,9 @@ function formatTime(t) {
 	padding: 0 40rpx;
 	line-height: 64rpx;
 	height: 64rpx;
+}
+
+.leave-card {
+	margin-top: 40rpx;
 }
 </style>

@@ -3,6 +3,9 @@ export const BASE_URL = 'http://localhost:8080'
 
 const TOKEN_KEY = 'auth_token'
 
+// 401 跳转去重：并发请求同时 401 时只 reLaunch 一次登录页
+let redirectingToLogin = false
+
 export function getToken() {
 	return uni.getStorageSync(TOKEN_KEY) || ''
 }
@@ -13,6 +16,11 @@ export function setToken(token) {
 
 export function clearToken() {
 	uni.removeStorageSync(TOKEN_KEY)
+}
+
+/** 登录成功后复位 401 跳转标志 */
+export function resetAuthRedirect() {
+	redirectingToLogin = false
 }
 
 /**
@@ -41,7 +49,10 @@ export function request(options) {
 					const msg = (body && body.message) || '请求失败'
 					if (body && body.code === 401) {
 						clearToken()
-						uni.reLaunch({ url: '/pages/login/login' })
+						if (!redirectingToLogin) {
+							redirectingToLogin = true
+							uni.reLaunch({ url: '/pages/login/login' })
+						}
 					} else {
 						uni.showToast({ title: msg, icon: 'none' })
 					}

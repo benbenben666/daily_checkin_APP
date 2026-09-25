@@ -17,6 +17,7 @@ export const companyApi = {
 	members: (id) => get(`/api/companies/${id}/members`),
 	removeMember: (id, userId) => del(`/api/companies/${id}/members/${userId}`),
 	blacklist: (id, data) => post(`/api/companies/${id}/blacklist`, data),
+	leave: (id) => post(`/api/companies/${id}/leave`),
 	dissolve: (id) => post(`/api/companies/${id}/dissolve`)
 }
 

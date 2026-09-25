@@ -65,6 +65,7 @@
 import { reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { companyApi, taskApi } from '../../api/index.js'
+import { getToken } from '../../api/request.js'
 
 const companyId = ref(0)
 const members = ref([])
@@ -83,7 +84,17 @@ const form = reactive({
 })
 
 onLoad(async (options) => {
-	companyId.value = Number(options.companyId)
+	if (!getToken()) {
+		uni.reLaunch({ url: '/pages/login/login' })
+		return
+	}
+	const id = Number(options && options.companyId)
+	if (!Number.isFinite(id) || id <= 0) {
+		uni.showToast({ title: '公司参数有误', icon: 'none' })
+		setTimeout(() => uni.navigateBack(), 800)
+		return
+	}
+	companyId.value = id
 	members.value = await companyApi.members(companyId.value)
 })
 

@@ -25,13 +25,14 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { authApi } from '../../api/index.js'
-import { setToken } from '../../api/request.js'
+import { setToken, resetAuthRedirect } from '../../api/request.js'
 
 const mode = ref('login')
 const loading = ref(false)
 const form = reactive({ phone: '', password: '', nickname: '' })
 
 function afterLogin(data) {
+	resetAuthRedirect()
 	setToken(data.token)
 	uni.setStorageSync('user_info', JSON.stringify(data))
 	if (data.systemRole === 'ADMIN') {

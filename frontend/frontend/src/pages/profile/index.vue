@@ -15,7 +15,7 @@
 			<text class="label">修改昵称</text>
 			<view class="row">
 				<input class="input flex1" v-model="nickname" placeholder="新昵称" />
-				<button class="btn-primary mini" @click="saveNickname">保存</button>
+				<button class="btn-primary mini" :loading="saving" @click="saveNickname">保存</button>
 			</view>
 		</view>
 
@@ -35,6 +35,7 @@ import { clearToken, getToken } from '../../api/request.js'
 
 const user = ref({})
 const nickname = ref('')
+const saving = ref(false)
 
 const avatarText = computed(() => {
 	const n = user.value.nickname || user.value.phone || '?'
@@ -51,17 +52,30 @@ onShow(async () => {
 })
 
 async function saveNickname() {
+	if (saving.value) return
 	if (!nickname.value.trim()) {
 		uni.showToast({ title: '昵称不能为空', icon: 'none' })
 		return
 	}
-	await authApi.updateMe({ nickname: nickname.value.trim() })
-	uni.showToast({ title: '已保存', icon: 'none' })
-	user.value = await authApi.me()
+	saving.value = true
+	try {
+		await authApi.updateMe({ nickname: nickname.value.trim() })
+		uni.showToast({ title: '已保存', icon: 'none' })
+		user.value = await authApi.me()
+	} catch (e) {
+		// 错误提示已在 request 层统一处理
+	} finally {
+		saving.value = false
+	}
 }
 
 function go(url) {
-	uni.navigateTo({ url })
+	// 「我的公司」是首页，可能已在页面栈内，用 reLaunch 避免重复页面实例
+	if (url === '/pages/index/index') {
+		uni.reLaunch({ url })
+	} else {
+		uni.navigateTo({ url })
+	}
 }
 
 function logout() {
