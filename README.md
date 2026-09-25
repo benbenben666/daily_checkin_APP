@@ -25,8 +25,8 @@
 daily_checkin_APP/
 ├── backend/          Spring Boot 4.1.1 + MyBatis + MySQL
 │   └── src/main/resources/db/schema.sql    ← 建表脚本
-├── frontend/         uni-app x（HBuilderX 工程，非 Vue+Vite）
-│   └── frontend/     ← HBuilderX 工程根
+├── frontend/         经典 uni-app（Vue3 + Vite）
+│   └── frontend/     ← 前端工程根（src/ 下为源码）
 └── docs/开发文档.md   ← 完整设计文档
 ```
 
@@ -34,9 +34,9 @@ daily_checkin_APP/
 
 | 端 | 技术 |
 |---|---|
-| 后端 | Spring Boot **4.1.1** · Java **21** · MyBatis · MySQL **8.0** · Lombok |
-| 前端 | **uni-app x**（UTS + UVUE）· 由 HBuilderX 编译 |
-| 存储 | 阿里云 OSS（任务配图、完成提交图） |
+| 后端 | Spring Boot **4.1.1** · Java **21** · MyBatis · MySQL **8.0** · JWT（jjwt）· Lombok |
+| 前端 | **经典 uni-app（Vue3 + JS）** · Vite · `npm run dev:h5` 跑浏览器 |
+| 存储 | 阿里云 OSS（任务配图、完成提交图；直传签名已实现，OSS 配置为占位） |
 
 ## 快速开始
 
@@ -57,9 +57,17 @@ cd backend
 .\mvnw spring-boot:run
 ```
 
+服务启动在 `http://localhost:8080`。数据库账号密码在 `backend/src/main/resources/application.yaml`。
+
 ### 3. 前端
 
-用 **HBuilderX** 打开 `frontend/frontend` 目录，运行到浏览器或模拟器。
+```powershell
+cd frontend/frontend
+npm install
+npm run dev:h5
+```
+
+浏览器打开 `http://localhost:5173`。接口基地址在 `src/api/request.js` 的 `BASE_URL`（默认 `http://localhost:8080`，后端已开 CORS）。
 
 ## 预设管理员
 

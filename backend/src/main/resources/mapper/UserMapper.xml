@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ben.daily_check_in.mapper.UserMapper">
+
+    <insert id="insert">
+        INSERT INTO `user` (`phone`, `password`, `nickname`)
+        VALUES (#{phone}, #{password}, #{nickname})
+    </insert>
+
+    <select id="selectById" resultType="User">
+        SELECT * FROM `user` WHERE `id` = #{id}
+    </select>
+
+    <select id="selectByPhone" resultType="User">
+        SELECT * FROM `user` WHERE `phone` = #{phone}
+    </select>
+
+    <update id="updateNickname">
+        UPDATE `user` SET `nickname` = #{nickname} WHERE `id` = #{id}
+    </update>
+
+    <update id="updatePassword">
+        UPDATE `user` SET `password` = #{password} WHERE `id` = #{id}
+    </update>
+
+    <update id="updateAvatar">
+        UPDATE `user` SET `avatar_key` = #{avatarKey} WHERE `id` = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE `user` SET `status` = #{status} WHERE `id` = #{id}
+    </update>
+
+    <update id="updateSystemRole">
+        UPDATE `user` SET `system_role` = #{systemRole} WHERE `id` = #{id}
+    </update>
+
+    <select id="selectAll" resultType="User">
+        SELECT * FROM `user`
+        <where>
+            <if test="keyword != null and keyword != ''">
+                (`phone` LIKE CONCAT('%', #{keyword}, '%')
+                 OR `nickname` LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        ORDER BY `id`
+    </select>
+
+</mapper>

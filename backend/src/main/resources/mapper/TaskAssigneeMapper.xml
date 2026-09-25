@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ben.daily_check_in.mapper.TaskAssigneeMapper">
+
+    <insert id="insert">
+        INSERT INTO `task_assignee` (`task_id`, `user_id`, `assigned_at`)
+        VALUES (#{taskId}, #{userId}, NOW())
+    </insert>
+
+    <delete id="deleteByTask">
+        DELETE FROM `task_assignee` WHERE `task_id` = #{taskId}
+    </delete>
+
+    <select id="selectByTask" resultType="TaskAssignee">
+        SELECT * FROM `task_assignee` WHERE `task_id` = #{taskId} ORDER BY `assigned_at`
+    </select>
+
+    <select id="isAssignee" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM `task_assignee`
+            WHERE `task_id` = #{taskId} AND `user_id` = #{userId}
+        )
+    </select>
+
+    <select id="selectWithUser" resultType="com.ben.daily_check_in.dto.task.TaskResponse$AssigneeItem">
+        SELECT u.`id` AS userId, u.`nickname`, u.`phone`
+        FROM `task_assignee` ta
+        JOIN `user` u ON u.`id` = ta.`user_id`
+        WHERE ta.`task_id` = #{taskId}
+        ORDER BY ta.`assigned_at`
+    </select>
+
+</mapper>

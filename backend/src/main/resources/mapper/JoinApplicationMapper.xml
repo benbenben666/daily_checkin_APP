@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ben.daily_check_in.mapper.JoinApplicationMapper">
+
+    <insert id="insert">
+        INSERT INTO `join_application` (`user_id`, `company_id`, `apply_role`, `status`, `created_at`)
+        VALUES (#{userId}, #{companyId}, #{applyRole}, 'PENDING', NOW())
+    </insert>
+
+    <select id="selectById" resultType="JoinApplication">
+        SELECT * FROM `join_application` WHERE `id` = #{id}
+    </select>
+
+    <!-- 不加 status 条件：撤回、拒绝、通过、待审批全部计入每日 3 次限额 -->
+    <select id="countToday" resultType="int">
+        SELECT COUNT(*) FROM `join_application`
+        WHERE `user_id` = #{userId} AND `company_id` = #{companyId}
+          AND `created_at` >= CURDATE()
+          AND `created_at` &lt; CURDATE() + INTERVAL 1 DAY
+    </select>
+
+    <select id="hasPending" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM `join_application`
+            WHERE `user_id` = #{userId} AND `company_id` = #{companyId} AND `status` = 'PENDING'
+        )
+    </select>
+
+    <select id="selectLatestPending" resultType="JoinApplication">
+        SELECT * FROM `join_application`
+        WHERE `user_id` = #{userId} AND `company_id` = #{companyId} AND `status` = 'PENDING'
+        ORDER BY `id` DESC LIMIT 1
+    </select>
+
+    <sql id="applicationColumns">
+        ja.`id`, ja.`user_id` AS userId, ja.`company_id` AS companyId,
+        ja.`apply_role` AS applyRole, ja.`status`,
+        ja.`reviewer_id` AS reviewerId, ja.`reviewed_at` AS reviewedAt,
+        ja.`reject_reason` AS rejectReason, ja.`created_at` AS createdAt,
+        c.`name` AS companyName,
+        u.`nickname` AS userNickname, u.`phone` AS userPhone,
+        r.`nickname` AS reviewerNickname
+    </sql>
+
+    <select id="selectPending" resultType="com.ben.daily_check_in.dto.application.ApplicationResponse">
+        SELECT <include refid="applicationColumns"/>
+        FROM `join_application` ja
+        JOIN `user` u ON u.`id` = ja.`user_id`
+        JOIN `company` c ON c.`id` = ja.`company_id`
+        LEFT JOIN `user` r ON r.`id` = ja.`reviewer_id`
+        WHERE ja.`company_id` = #{companyId} AND ja.`status` = 'PENDING'
+        ORDER BY ja.`created_at`
+    </select>
+
+    <select id="selectHistory" resultType="com.ben.daily_check_in.dto.application.ApplicationResponse">
+        SELECT <include refid="applicationColumns"/>
+        FROM `join_application` ja
+        JOIN `user` u ON u.`id` = ja.`user_id`
+        JOIN `company` c ON c.`id` = ja.`company_id`
+        LEFT JOIN `user` r ON r.`id` = ja.`reviewer_id`
+        WHERE ja.`company_id` = #{companyId}
+        ORDER BY ja.`created_at` DESC
+    </select>
+
+    <select id="selectByUser" resultType="com.ben.daily_check_in.dto.application.ApplicationResponse">
+        SELECT <include refid="applicationColumns"/>
+        FROM `join_application` ja
+        JOIN `user` u ON u.`id` = ja.`user_id`
+        JOIN `company` c ON c.`id` = ja.`company_id`
+        LEFT JOIN `user` r ON r.`id` = ja.`reviewer_id`
+        WHERE ja.`user_id` = #{userId}
+        ORDER BY ja.`created_at` DESC
+    </select>
+
+    <!-- 仅当仍为 PENDING 时生效，影响 0 行说明已被他人处理 -->
+    <update id="approve">
+        UPDATE `join_application`
+        SET `status` = 'APPROVED', `reviewer_id` = #{reviewerId}, `reviewed_at` = NOW()
+        WHERE `id` = #{id} AND `status` = 'PENDING'
+    </update>
+
+    <update id="reject">
+        UPDATE `join_application`
+        SET `status` = 'REJECTED', `reviewer_id` = #{reviewerId}, `reviewed_at` = NOW(),
+            `reject_reason` = #{rejectReason}
+        WHERE `id` = #{id} AND `status` = 'PENDING'
+    </update>
+
+    <update id="cancelByUser">
+        UPDATE `join_application`
+        SET `status` = 'CANCELLED'
+        WHERE `id` = #{id} AND `user_id` = #{userId} AND `status` = 'PENDING'
+    </update>
+
+    <!-- 拉黑时把待审批申请置为已拒绝，不暴露拉黑事实 -->
+    <update id="rejectPendingByBlacklist">
+        UPDATE `join_application`
+        SET `status` = 'REJECTED', `reject_reason` = '申请未通过', `reviewed_at` = NOW()
+        WHERE `user_id` = #{userId} AND `company_id` = #{companyId} AND `status` = 'PENDING'
+    </update>
+
+</mapper>

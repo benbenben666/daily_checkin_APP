@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ben.daily_check_in.mapper.CompanyBlacklistMapper">
+
+    <!-- 幂等：重复拉黑更新操作人与原因，created_at 保留最初拉黑时间 -->
+    <insert id="upsert">
+        INSERT INTO `company_blacklist` (`company_id`, `user_id`, `operator_id`, `reason`, `created_at`)
+        VALUES (#{companyId}, #{userId}, #{operatorId}, #{reason}, NOW()) AS new
+        ON DUPLICATE KEY UPDATE
+            `operator_id` = new.`operator_id`,
+            `reason` = new.`reason`
+    </insert>
+
+    <select id="exists" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM `company_blacklist`
+            WHERE `company_id` = #{companyId} AND `user_id` = #{userId}
+        )
+    </select>
+
+    <delete id="delete">
+        DELETE FROM `company_blacklist`
+        WHERE `company_id` = #{companyId} AND `user_id` = #{userId}
+    </delete>
+
+    <select id="selectByCompany" resultType="CompanyBlacklist">
+        SELECT * FROM `company_blacklist` WHERE `company_id` = #{companyId} ORDER BY `created_at` DESC
+    </select>
+
+</mapper>

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ben.daily_check_in.mapper.TaskMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `task` (`company_id`, `publisher_id`, `task_type`, `title`, `description`,
+                            `time_limit_minutes`, `visibility`, `allow_late_submit`, `created_at`)
+        VALUES (#{companyId}, #{publisherId}, #{taskType}, #{title}, #{description},
+                #{timeLimitMinutes}, #{visibility}, #{allowLateSubmit}, NOW())
+    </insert>
+
+    <select id="selectById" resultType="Task">
+        SELECT * FROM `task` WHERE `id` = #{id}
+    </select>
+
+    <!-- 编辑任务：只更新非 null 字段；生成列自动跟随 -->
+    <update id="update">
+        UPDATE `task`
+        <set>
+            <if test="taskType != null">`task_type` = #{taskType},</if>
+            <if test="title != null">`title` = #{title},</if>
+            <if test="description != null">`description` = #{description},</if>
+            <if test="timeLimitMinutes != null">`time_limit_minutes` = #{timeLimitMinutes},</if>
+            <if test="visibility != null">`visibility` = #{visibility},</if>
+            <if test="allowLateSubmit != null">`allow_late_submit` = #{allowLateSubmit},</if>
+        </set>
+        WHERE `id` = #{id}
+    </update>
+
+    <!--
+        完成/补交任务（抢单原子性核心，见开发文档 6.7 / 7.4）：
+        一条带条件的 UPDATE 同时完成「检查状态 + 检查补交窗口 + 检查执行权限 + 写入完成」，
+        靠 InnoDB 行锁保证原子性，影响 1 行 = 成功。
+    -->
+    <update id="complete">
+        UPDATE `task` t
+        LEFT JOIN `task_assignee` ta ON ta.`task_id` = t.`id` AND ta.`user_id` = #{userId}
+        SET t.`status`         = 'COMPLETED',
+            t.`completed_by`   = #{userId},
+            t.`completed_at`   = NOW(),
+            t.`submit_content` = #{submitContent}
+        WHERE t.`id` = #{taskId}
+          AND t.`status` IN ('PENDING', 'EXPIRED')
+          AND (t.`status` = 'PENDING'
+               OR (t.`allow_late_submit` = 1 AND NOW() &lt;= t.`late_deadline_at`))
+          AND (t.`task_type` = 'GLOBAL' OR ta.`id` IS NOT NULL)
+    </update>
+
+    <!-- 取消任务：仅 PENDING / EXPIRED 可取消 -->
+    <update id="cancel">
+        UPDATE `task`
+        SET `status` = 'CANCELLED', `cancelled_by` = #{cancelledBy},
+            `cancelled_at` = NOW(), `cancel_reason` = #{cancelReason}
+        WHERE `id` = #{taskId} AND `status` IN ('PENDING', 'EXPIRED')
+    </update>
+
+    <!-- 定时任务：把已过截止时间的 PENDING 任务标记为 EXPIRED -->
+    <update id="markExpired">
+        UPDATE `task` SET `status` = 'EXPIRED'
+        WHERE `status` = 'PENDING' AND `deadline_at` &lt; NOW()
+    </update>
+
+    <!-- 创始人/管理者/管理员：本公司全部任务 -->
+    <select id="selectAllByCompany" resultType="Task">
+        SELECT * FROM `task` WHERE `company_id` = #{companyId} ORDER BY `created_at` DESC
+    </select>
+
+    <!-- 员工：待抢视图（可见 且（待抢的全局任务 或 指派给自己）） -->
+    <select id="selectGrabList" resultType="Task">
+        SELECT t.* FROM `task` t
+        WHERE t.`company_id` = #{companyId}
+          AND (
+                t.`visibility` = 'PUBLIC'
+             OR EXISTS (SELECT 1 FROM `task_viewer`   tv WHERE tv.`task_id` = t.`id` AND tv.`user_id` = #{userId})
+             OR EXISTS (SELECT 1 FROM `task_assignee` ta WHERE ta.`task_id` = t.`id` AND ta.`user_id` = #{userId})
+          )
+          AND (
+                (t.`task_type` = 'GLOBAL' AND t.`status` = 'PENDING' AND t.`deadline_at` &gt; NOW())
+             OR EXISTS (SELECT 1 FROM `task_assignee` ta2 WHERE ta2.`task_id` = t.`id` AND ta2.`user_id` = #{userId})
+          )
+        ORDER BY t.`created_at` DESC
+    </select>
+
+    <!-- 员工：历史视图（可见 且 我参与过的） -->
+    <select id="selectHistoryList" resultType="Task">
+        SELECT t.* FROM `task` t
+        WHERE t.`company_id` = #{companyId}
+          AND (
+                t.`visibility` = 'PUBLIC'
+             OR EXISTS (SELECT 1 FROM `task_viewer`   tv WHERE tv.`task_id` = t.`id` AND tv.`user_id` = #{userId})
+             OR EXISTS (SELECT 1 FROM `task_assignee` ta WHERE ta.`task_id` = t.`id` AND ta.`user_id` = #{userId})
+          )
+          AND (
+                t.`completed_by` = #{userId}
+             OR EXISTS (SELECT 1 FROM `task_assignee` ta2 WHERE ta2.`task_id` = t.`id` AND ta2.`user_id` = #{userId})
+          )
+        ORDER BY t.`created_at` DESC
+    </select>
+
+    <!-- 单条任务可见性校验 -->
+    <select id="canView" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM `task` t
+            WHERE t.`id` = #{taskId}
+              AND (t.`visibility` = 'PUBLIC'
+                OR EXISTS (SELECT 1 FROM `task_viewer`   tv WHERE tv.`task_id` = t.`id` AND tv.`user_id` = #{userId})
+                OR EXISTS (SELECT 1 FROM `task_assignee` ta WHERE ta.`task_id` = t.`id` AND ta.`user_id` = #{userId}))
+        )
+    </select>
+
+</mapper>

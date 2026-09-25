@@ -1,3 +1,27 @@
 spring:
   application:
     name: daily_check_in
+  datasource:
+    url: jdbc:mysql://localhost:3306/daily_check_in?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: "123456"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.ben.daily_check_in.entity,com.ben.daily_check_in.dto
+  configuration:
+    map-underscore-to-camel-case: true   # user_id -> userId 的关键
+
+app:
+  jwt:
+    # ⚠️ 生产环境必须更换为随机字符串（不少于 32 字符）
+    secret: "daily-check-in-jwt-secret-please-change-2026"
+    # 令牌有效期（小时），默认 7 天
+    expire-hours: 168
+  oss:
+    # ⚠️ 占位配置，接入前替换为真实值
+    endpoint: "oss-cn-hangzhou.aliyuncs.com"
+    access-key-id: "your-access-key-id"
+    access-key-secret: "your-access-key-secret"
+    bucket: "your-bucket-name"

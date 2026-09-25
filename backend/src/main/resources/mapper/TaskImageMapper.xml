@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ben.daily_check_in.mapper.TaskImageMapper">
+
+    <insert id="insert">
+        INSERT INTO `task_image` (`task_id`, `image_type`, `object_key`, `sort_order`, `created_at`)
+        VALUES (#{taskId}, #{imageType}, #{objectKey}, #{sortOrder}, NOW())
+    </insert>
+
+    <delete id="deleteByTaskAndType">
+        DELETE FROM `task_image` WHERE `task_id` = #{taskId} AND `image_type` = #{imageType}
+    </delete>
+
+    <select id="selectByTaskAndType" resultType="TaskImage">
+        SELECT * FROM `task_image`
+        WHERE `task_id` = #{taskId} AND `image_type` = #{imageType}
+        ORDER BY `sort_order`, `id`
+    </select>
+
+</mapper>

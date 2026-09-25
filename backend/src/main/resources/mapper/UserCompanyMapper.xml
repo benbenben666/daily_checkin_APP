@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ben.daily_check_in.mapper.UserCompanyMapper">
+
+    <insert id="insert">
+        INSERT INTO `user_company` (`user_id`, `company_id`, `company_role`, `status`, `joined_at`)
+        VALUES (#{userId}, #{companyId}, #{companyRole}, 1, NOW())
+    </insert>
+
+    <!-- 审批通过：曾离职则复用原成员记录行，避免撞唯一键 -->
+    <insert id="upsertOnApprove">
+        INSERT INTO `user_company` (`user_id`, `company_id`, `company_role`, `status`, `joined_at`)
+        VALUES (#{userId}, #{companyId}, #{companyRole}, 1, NOW()) AS new
+        ON DUPLICATE KEY UPDATE
+            `company_role` = new.`company_role`,
+            `status` = 1,
+            `leave_type` = NULL,
+            `joined_at` = new.`joined_at`,
+            `left_at` = NULL
+    </insert>
+
+    <select id="selectActive" resultType="UserCompany">
+        SELECT * FROM `user_company`
+        WHERE `user_id` = #{userId} AND `company_id` = #{companyId} AND `status` = 1
+    </select>
+
+    <select id="selectAny" resultType="UserCompany">
+        SELECT * FROM `user_company`
+        WHERE `user_id` = #{userId} AND `company_id` = #{companyId}
+    </select>
+
+    <select id="selectActiveByUser" resultType="UserCompany">
+        SELECT * FROM `user_company` WHERE `user_id` = #{userId} AND `status` = 1
+    </select>
+
+    <select id="selectMembers" resultType="com.ben.daily_check_in.dto.company.MemberResponse">
+        SELECT u.`id` AS userId, u.`nickname`, u.`phone`, u.`avatar_key` AS avatarKey,
+               uc.`company_role` AS companyRole, uc.`joined_at` AS joinedAt
+        FROM `user_company` uc
+        JOIN `user` u ON u.`id` = uc.`user_id`
+        WHERE uc.`company_id` = #{companyId} AND uc.`status` = 1
+        ORDER BY FIELD(uc.`company_role`, 'FOUNDER', 'MANAGER', 'EMPLOYEE'), uc.`joined_at`
+    </select>
+
+    <select id="countMembers" resultType="int">
+        SELECT COUNT(*) FROM `user_company`
+        WHERE `company_id` = #{companyId} AND `status` = 1
+    </select>
+
+    <update id="removeMember">
+        UPDATE `user_company`
+        SET `status` = 0, `leave_type` = 2, `left_at` = NOW()
+        WHERE `user_id` = #{userId} AND `company_id` = #{companyId} AND `status` = 1
+    </update>
+
+    <update id="kickByBlacklist">
+        UPDATE `user_company`
+        SET `status` = 0, `leave_type` = 3, `left_at` = NOW()
+        WHERE `user_id` = #{userId} AND `company_id` = #{companyId} AND `status` = 1
+    </update>
+
+    <select id="hasManager" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM `user_company`
+            WHERE `company_id` = #{companyId} AND `status` = 1 AND `company_role` = 'MANAGER'
+        )
+    </select>
+
+    <select id="selectActiveRole" resultType="string">
+        SELECT `company_role` FROM `user_company`
+        WHERE `user_id` = #{userId} AND `company_id` = #{companyId} AND `status` = 1
+    </select>
+
+</mapper>
