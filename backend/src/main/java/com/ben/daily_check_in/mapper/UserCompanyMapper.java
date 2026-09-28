@@ -29,7 +29,7 @@ public interface UserCompanyMapper {
 
     int countMembers(@Param("companyId") Long companyId);
 
-    /** 从给定 ID 中筛出「在该公司当前在职」的那部分，用于校验指派/可见人 */
+    /** 从给定 ID 中筛出「在该公司当前在职」的那部分，用于校验指派人 */
     List<Long> selectActiveUserIds(@Param("companyId") Long companyId,
                                    @Param("userIds") List<Long> userIds);
 

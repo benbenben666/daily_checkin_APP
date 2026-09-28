@@ -20,7 +20,6 @@ USE `daily_check_in`;
 -- ------------------------------------------------------------
 -- 清理（按外键依赖倒序）
 -- ------------------------------------------------------------
-DROP TABLE IF EXISTS `task_viewer`;
 DROP TABLE IF EXISTS `task_image`;
 DROP TABLE IF EXISTS `task_assignee`;
 DROP TABLE IF EXISTS `task`;
@@ -178,7 +177,6 @@ CREATE TABLE `task` (
     `cancelled_by`       BIGINT                DEFAULT NULL                COMMENT '取消操作人用户ID（创始人/管理者）',
     `cancelled_at`       DATETIME              DEFAULT NULL                COMMENT '取消时间',
     `cancel_reason`      VARCHAR(200)          DEFAULT NULL                COMMENT '取消原因',
-    `visibility`         VARCHAR(20)  NOT NULL DEFAULT 'PUBLIC'            COMMENT '可见范围：PUBLIC-全公司可见 RESTRICTED-仅白名单可见（白名单见 task_viewer）',
     `allow_late_submit`  TINYINT      NOT NULL DEFAULT 1                   COMMENT '是否允许超时补交：1-允许（默认） 0-不允许',
     `updated_at`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
 
@@ -200,7 +198,6 @@ CREATE TABLE `task` (
     CONSTRAINT `fk_task_canceller` FOREIGN KEY (`cancelled_by`) REFERENCES `user` (`id`),
     CONSTRAINT `ck_task_type`       CHECK (`task_type` IN ('GLOBAL', 'ASSIGNED')),
     CONSTRAINT `ck_task_status`     CHECK (`status` IN ('PENDING', 'EXPIRED', 'COMPLETED', 'CANCELLED')),
-    CONSTRAINT `ck_task_visibility` CHECK (`visibility` IN ('PUBLIC', 'RESTRICTED')),
     CONSTRAINT `ck_task_late`       CHECK (`allow_late_submit` IN (0, 1)),
     CONSTRAINT `ck_task_time_limit` CHECK (`time_limit_minutes` BETWEEN 5 AND 43200),
     -- 完成态必须有完成人和完成时间；其他状态必须都没有
@@ -242,22 +239,6 @@ CREATE TABLE `task_image` (
     CONSTRAINT `fk_ti_task` FOREIGN KEY (`task_id`) REFERENCES `task` (`id`),
     CONSTRAINT `ck_ti_type` CHECK (`image_type` IN ('DETAIL', 'SUBMIT'))
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '任务图片表';
-
--- ------------------------------------------------------------
--- 9. 任务可见人白名单（visibility = RESTRICTED 时生效）
--- ------------------------------------------------------------
-CREATE TABLE `task_viewer` (
-    `id`         BIGINT   NOT NULL AUTO_INCREMENT              COMMENT '主键',
-    `task_id`    BIGINT   NOT NULL                             COMMENT '任务ID',
-    `user_id`    BIGINT   NOT NULL                             COMMENT '可见用户ID',
-    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP   COMMENT '添加时间',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_task_user` (`task_id`, `user_id`),
-    KEY `idx_user_id` (`user_id`),
-    CONSTRAINT `fk_tv_task` FOREIGN KEY (`task_id`) REFERENCES `task` (`id`),
-    CONSTRAINT `fk_tv_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci
-  COMMENT = '任务可见人白名单（visibility=RESTRICTED 时生效；被指派人无需重复写入，查询时自动可见）';
 
 -- ============================================================
 --  系统管理员的唯一产生途径：手工改库

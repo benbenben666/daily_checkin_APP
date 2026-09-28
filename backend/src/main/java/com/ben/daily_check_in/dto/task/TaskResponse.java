@@ -32,8 +32,6 @@ public class TaskResponse {
     private Long cancelledBy;
     private LocalDateTime cancelledAt;
     private String cancelReason;
-    /** PUBLIC / RESTRICTED */
-    private String visibility;
     private Integer allowLateSubmit;
     /** 0-按时 1-超时完成 */
     private Integer isLate;
@@ -43,8 +41,6 @@ public class TaskResponse {
     private List<ImageItem> submitImages;
     /** 被指派人（ASSIGNED 时） */
     private List<AssigneeItem> assignees;
-    /** 可见人白名单（RESTRICTED 时） */
-    private List<ViewerItem> viewers;
 
     @Data
     public static class ImageItem {
@@ -60,11 +56,5 @@ public class TaskResponse {
         private Long userId;
         private String nickname;
         private String phone;
-    }
-
-    @Data
-    public static class ViewerItem {
-        private Long userId;
-        private String nickname;
     }
 }

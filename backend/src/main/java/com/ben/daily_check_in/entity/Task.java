@@ -33,8 +33,6 @@ public class Task {
     private Long cancelledBy;
     private LocalDateTime cancelledAt;
     private String cancelReason;
-    /** PUBLIC / RESTRICTED */
-    private String visibility;
     /** 1-允许超时补交 0-不允许 */
     private Integer allowLateSubmit;
     private LocalDateTime updatedAt;

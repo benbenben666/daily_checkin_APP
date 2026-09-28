@@ -1,60 +1,75 @@
 {
+	// ============================================================
+	// 页面路由配置文件
+	// - pages 数组：注册所有页面，第一项为应用启动页
+	// - style.navigationBarTitleText：各页面原生导航栏标题
+	// ============================================================
 	"pages": [
 		{
+			// 登录 / 注册页（启动页）
 			"path": "pages/login/login",
 			"style": {
 				"navigationBarTitleText": "登录"
 			}
 		},
 		{
+			// 我的公司列表（普通用户登录后的首页）
 			"path": "pages/index/index",
 			"style": {
 				"navigationBarTitleText": "我的公司"
 			}
 		},
 		{
+			// 创建公司页
 			"path": "pages/company/create",
 			"style": {
 				"navigationBarTitleText": "创建公司"
 			}
 		},
 		{
+			// 凭邀请码加入公司页（含我的申请记录）
 			"path": "pages/company/join",
 			"style": {
 				"navigationBarTitleText": "加入公司"
 			}
 		},
 		{
+			// 公司主页（任务 / 成员 / 审批三个 Tab）
 			"path": "pages/company/home",
 			"style": {
 				"navigationBarTitleText": "公司"
 			}
 		},
 		{
+			// 发布任务页
 			"path": "pages/task/create",
 			"style": {
 				"navigationBarTitleText": "发布任务"
 			}
 		},
 		{
+			// 任务详情页（查看 / 完成 / 取消）
 			"path": "pages/task/detail",
 			"style": {
 				"navigationBarTitleText": "任务详情"
 			}
 		},
 		{
+			// 系统管理页（仅 ADMIN，用户 / 公司管理）
 			"path": "pages/admin/index",
 			"style": {
 				"navigationBarTitleText": "系统管理"
 			}
 		},
 		{
+			// 个人中心页（资料 / 退出登录）
 			"path": "pages/profile/index",
 			"style": {
 				"navigationBarTitleText": "个人中心"
 			}
 		}
 	],
+	// 全局窗口样式：蓝色导航栏主题
 	"globalStyle": {
 		"navigationBarTextStyle": "white",
 		"navigationBarTitleText": "任务平台",

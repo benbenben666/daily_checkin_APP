@@ -6,6 +6,7 @@ import com.ben.daily_check_in.entity.Company;
 import com.ben.daily_check_in.entity.Task;
 import com.ben.daily_check_in.entity.TaskImage;
 import com.ben.daily_check_in.entity.User;
+
 import com.ben.daily_check_in.mapper.*;
 import com.ben.daily_check_in.security.LoginUser;
 import com.ben.daily_check_in.security.UserContext;
@@ -26,7 +27,7 @@ import java.util.Set;
 @Service
 public class TaskService {
 
-    /** 单次请求允许携带的指派 / 可见人数量上限（防超大请求把事务撑爆） */
+    /** 单次请求允许携带的指派人数量上限（防超大请求把事务撑爆） */
     private static final int MAX_RELATION_IDS = 200;
     /** 单张任务允许的配图数量上限 */
     private static final int MAX_IMAGES = 20;
@@ -37,19 +38,17 @@ public class TaskService {
     private final TaskMapper taskMapper;
     private final TaskAssigneeMapper assigneeMapper;
     private final TaskImageMapper imageMapper;
-    private final TaskViewerMapper viewerMapper;
     private final CompanyMapper companyMapper;
     private final UserCompanyMapper userCompanyMapper;
     private final UserMapper userMapper;
 
     public TaskService(TaskMapper taskMapper, TaskAssigneeMapper assigneeMapper,
-                       TaskImageMapper imageMapper, TaskViewerMapper viewerMapper,
+                       TaskImageMapper imageMapper,
                        CompanyMapper companyMapper, UserCompanyMapper userCompanyMapper,
                        UserMapper userMapper) {
         this.taskMapper = taskMapper;
         this.assigneeMapper = assigneeMapper;
         this.imageMapper = imageMapper;
-        this.viewerMapper = viewerMapper;
         this.companyMapper = companyMapper;
         this.userCompanyMapper = userCompanyMapper;
         this.userMapper = userMapper;
@@ -74,11 +73,10 @@ public class TaskService {
             throw BizException.badRequest("限时时长不能为空");
         }
         validateTaskFields(req.getTaskType(), req.getTitle(), req.getTimeLimitMinutes(),
-                req.getVisibility(), req.getAssigneeIds(), req.getViewerIds());
+                req.getAssigneeIds());
         checkAllowLateSubmit(req.getAllowLateSubmit());
-        // 指派 / 可见人必须是本公司当前在职成员，否则会写入跨公司脏关联
+        // 指派人必须是本公司当前在职成员，否则会写入跨公司脏关联
         requireActiveMembers(companyId, req.getAssigneeIds(), "被指派人");
-        requireActiveMembers(companyId, req.getViewerIds(), "可见人");
 
         Task task = new Task();
         task.setCompanyId(companyId);
@@ -87,12 +85,10 @@ public class TaskService {
         task.setTitle(req.getTitle().trim());
         task.setDescription(req.getDescription());
         task.setTimeLimitMinutes(req.getTimeLimitMinutes());
-        task.setVisibility(req.getVisibility() == null ? "PUBLIC" : req.getVisibility());
         task.setAllowLateSubmit(req.getAllowLateSubmit() == null ? 1 : req.getAllowLateSubmit());
         taskMapper.insert(task);
 
         saveAssignees(task.getId(), task.getTaskType(), req.getAssigneeIds());
-        saveViewers(task.getId(), task.getVisibility(), req.getViewerIds());
         saveImages(task.getId(), "DETAIL", req.getDetailImages());
         return task.getId();
     }
@@ -123,13 +119,11 @@ public class TaskService {
         }
 
         validateTaskFields(req.getTaskType(), req.getTitle(), req.getTimeLimitMinutes(),
-                req.getVisibility(), req.getAssigneeIds(), req.getViewerIds());
+                req.getAssigneeIds());
         checkAllowLateSubmit(req.getAllowLateSubmit());
         requireActiveMembers(task.getCompanyId(), req.getAssigneeIds(), "被指派人");
-        requireActiveMembers(task.getCompanyId(), req.getViewerIds(), "可见人");
 
         String finalType = req.getTaskType() != null ? req.getTaskType() : task.getTaskType();
-        String finalVisibility = req.getVisibility() != null ? req.getVisibility() : task.getVisibility();
 
         // 必须用「合并后的生效值」校验：否则对已存在的 ASSIGNED 任务传 assigneeIds=[]，
         // taskType 为 null 会跳过上面的校验，清空指派人后 task_type='ASSIGNED' 却无指派行，
@@ -137,14 +131,11 @@ public class TaskService {
         if ("ASSIGNED".equals(finalType) && req.getAssigneeIds() != null && req.getAssigneeIds().isEmpty()) {
             throw BizException.badRequest("指定任务必须至少保留一个被指派人");
         }
-        if ("RESTRICTED".equals(finalVisibility) && req.getViewerIds() != null && req.getViewerIds().isEmpty()) {
-            throw BizException.badRequest("指定人可见时必须至少保留一个可见人");
-        }
 
         boolean hasTaskField = req.getTaskType() != null || req.getTitle() != null
                 || req.getDescription() != null || req.getTimeLimitMinutes() != null
-                || req.getVisibility() != null || req.getAllowLateSubmit() != null;
-        boolean hasRelationField = req.getAssigneeIds() != null || req.getViewerIds() != null
+                || req.getAllowLateSubmit() != null;
+        boolean hasRelationField = req.getAssigneeIds() != null
                 || req.getDetailImages() != null;
         if (!hasTaskField && !hasRelationField) {
             throw BizException.badRequest("没有需要修改的字段");
@@ -159,7 +150,6 @@ public class TaskService {
             patch.setTitle(req.getTitle() == null ? null : req.getTitle().trim());
             patch.setDescription(req.getDescription());
             patch.setTimeLimitMinutes(req.getTimeLimitMinutes());
-            patch.setVisibility(req.getVisibility());
             patch.setAllowLateSubmit(req.getAllowLateSubmit());
             taskMapper.update(patch);
         }
@@ -171,13 +161,6 @@ public class TaskService {
         } else if ("GLOBAL".equals(finalType)) {
             // 改成全局任务时清空历史指派
             assigneeMapper.deleteByTask(taskId);
-        }
-        if (req.getViewerIds() != null) {
-            viewerMapper.deleteByTask(taskId);
-            saveViewers(taskId, finalVisibility, req.getViewerIds());
-        } else if ("PUBLIC".equals(finalVisibility)) {
-            // 改成公开时清空白名单
-            viewerMapper.deleteByTask(taskId);
         }
         if (req.getDetailImages() != null) {
             imageMapper.deleteByTaskAndType(taskId, "DETAIL");
@@ -270,7 +253,7 @@ public class TaskService {
     // ---------- 内部工具 ----------
 
     private void validateTaskFields(String taskType, String title, Integer timeLimitMinutes,
-                                    String visibility, List<Long> assigneeIds, List<Long> viewerIds) {
+                                    List<Long> assigneeIds) {
         if (taskType != null && !"GLOBAL".equals(taskType) && !"ASSIGNED".equals(taskType)) {
             throw BizException.badRequest("任务类型只能是 GLOBAL 或 ASSIGNED");
         }
@@ -286,16 +269,9 @@ public class TaskService {
         if (timeLimitMinutes != null && (timeLimitMinutes < 5 || timeLimitMinutes > 43200)) {
             throw BizException.badRequest("限时时长必须在 5 分钟 ~ 30 天之间");
         }
-        if (visibility != null && !"PUBLIC".equals(visibility) && !"RESTRICTED".equals(visibility)) {
-            throw BizException.badRequest("可见范围只能是 PUBLIC 或 RESTRICTED");
-        }
         checkRelationIds(assigneeIds, "被指派人");
-        checkRelationIds(viewerIds, "可见人");
         if ("ASSIGNED".equals(taskType) && (assigneeIds == null || assigneeIds.isEmpty())) {
             throw BizException.badRequest("指定任务必须选择被指派人");
-        }
-        if ("RESTRICTED".equals(visibility) && (viewerIds == null || viewerIds.isEmpty())) {
-            throw BizException.badRequest("指定人可见时必须选择可见人");
         }
     }
 
@@ -339,15 +315,6 @@ public class TaskService {
         // 去重：重复 ID 会撞 uk_task_user 唯一键报 500
         for (Long uid : new LinkedHashSet<>(assigneeIds)) {
             assigneeMapper.insert(taskId, uid);
-        }
-    }
-
-    private void saveViewers(Long taskId, String visibility, List<Long> viewerIds) {
-        if (!"RESTRICTED".equals(visibility) || viewerIds == null) {
-            return;
-        }
-        for (Long uid : new LinkedHashSet<>(viewerIds)) {
-            viewerMapper.insert(taskId, uid);
         }
     }
 
@@ -419,7 +386,6 @@ public class TaskService {
         r.setCancelledBy(t.getCancelledBy());
         r.setCancelledAt(t.getCancelledAt());
         r.setCancelReason(t.getCancelReason());
-        r.setVisibility(t.getVisibility());
         r.setAllowLateSubmit(t.getAllowLateSubmit());
         r.setIsLate(t.getIsLate());
         if (withDetails) {
@@ -427,9 +393,6 @@ public class TaskService {
             r.setSubmitImages(toImageItems(imageMapper.selectByTaskAndType(t.getId(), "SUBMIT")));
             if ("ASSIGNED".equals(t.getTaskType())) {
                 r.setAssignees(assigneeMapper.selectWithUser(t.getId()));
-            }
-            if ("RESTRICTED".equals(t.getVisibility())) {
-                r.setViewers(viewerMapper.selectWithUser(t.getId()));
             }
         }
         return r;
